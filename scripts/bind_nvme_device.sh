@@ -105,7 +105,7 @@ resolve_device_path() {
     local retries=10
     local nvme_name=""
     for ((i=0; i<retries; i++)); do
-        nvme_name=$(find /sys/bus/pci/devices/"$pci_bdf"/nvme -maxdepth 1 -name "nvme*" 2>/dev/null | head -1)
+        nvme_name=$(find /sys/bus/pci/devices/"$pci_bdf"/nvme -mindepth 1 -maxdepth 1 -name "nvme*" 2>/dev/null | head -1)
         if [[ -n "$nvme_name" ]]; then
             nvme_name=$(basename "$nvme_name")
             break
