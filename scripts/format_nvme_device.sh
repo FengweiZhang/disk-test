@@ -69,7 +69,7 @@ main() {
 
     # Step 2: Format each namespace with secure erase
     local dev_path="/dev/$nvme_dev"
-    for ns in /sys/class/nvme/"$nvme_dev"/"${nvme_dev}"n*; do
+    for ns in /sys/class/nvme/"$nvme_dev"/nvme*n*; do
         if [[ -d "$ns" ]]; then
             local ns_name="/dev/$(basename "$ns")"
             log "Formatting $ns_name (this may take a while)..."

@@ -118,9 +118,9 @@ resolve_device_path() {
         exit 1
     fi
 
-    # Find the first namespace
+    # Find the first namespace (name may not follow <ctrl>nX pattern, e.g. nvme5n3 under nvme3)
     local ns_name=""
-    for ns in /sys/class/nvme/"$nvme_name"/"${nvme_name}"n*; do
+    for ns in /sys/class/nvme/"$nvme_name"/nvme*n*; do
         if [[ -d "$ns" ]]; then
             ns_name=$(basename "$ns")
             break
