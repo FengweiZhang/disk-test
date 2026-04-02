@@ -67,14 +67,23 @@ def run_fio_job(job_file: Path, raw_output_dir: Path) -> Path | None:
     json_name = job_file.stem + ".json"
     json_path = raw_output_dir / json_name
 
+    log_path = raw_output_dir / (job_file.stem + ".log")
+
     cmd = [
         "sudo", "fio", str(job_file),
-        "--output-format=json",
+        "--output-format=json+",
         f"--output={json_path}",
     ]
     logger.info("Running: %s", job_file.name)
 
     result = subprocess.run(cmd, capture_output=True, text=True)
+
+    # Save fio stdout/stderr as log
+    with open(log_path, "w") as f:
+        if result.stdout:
+            f.write(result.stdout)
+        if result.stderr:
+            f.write(result.stderr)
 
     if result.returncode != 0:
         logger.error("fio failed for %s: %s", job_file.name, result.stderr)
