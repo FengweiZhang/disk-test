@@ -114,10 +114,53 @@ The tool is driven by a JSON config file. All test parameters are configurable.
 
 ### Script Modifications
 
-- `raid0_create.sh`: Add `-y`/`--yes` flag to skip interactive confirmation prompt, and `--chunk` flag to override default chunk size
-- `raid0_delete.sh`: Add `-y`/`--yes` flag to skip interactive confirmation prompt
-- `format_nvme_device.sh`: Already supports `-y` flag, no changes needed
-- `bind_nvme_device.sh`: No changes needed
+All scripts are adapted from Geminifs originals for programmatic (Python subprocess) use. Key principles:
+
+- **Non-interactive**: No confirmation prompts. All scripts run without user input.
+- **Machine-parseable output**: Print key results as `KEY=VALUE` lines on stdout so Python can parse them. Human-readable status messages go to stderr.
+- **No color codes**: Remove ANSI color escapes (not useful when captured by subprocess).
+- **Proper exit codes**: 0 = success, non-zero = failure. Stderr contains error details.
+
+#### `format_nvme_device.sh`
+
+Based on Geminifs version. Modifications:
+- Remove interactive confirmation prompt entirely (original `-y` flag logic removed; script always runs non-interactively)
+- Print `NVME_DEV=nvmeX` and `DEVICE_PATH=/dev/nvmeXnY` to stdout after successful format
+- Status/progress messages to stderr
+- Remove emoji characters from output
+
+#### `bind_nvme_device.sh`
+
+Based on Geminifs version. Modifications:
+- Print `NVME_DEV=nvmeX` and `DEVICE_PATH=/dev/nvmeXnY` to stdout after successful bind (or if already bound)
+- Status/progress messages to stderr
+- Remove emoji characters from output
+- Remove `sleep 1` wait; Python caller handles any needed delay
+
+#### `raid0_create.sh`
+
+Based on Geminifs version. Modifications:
+- Remove interactive confirmation prompt entirely
+- Accept `--chunk <size>` flag to override default chunk size
+- Remove ANSI color codes
+- Print `RAID_DEVICE=/dev/mdX` to stdout after successful creation
+- Status/progress messages to stderr
+- Remove "Next Steps" instructions from output (Python handles filesystem creation)
+
+#### `raid0_delete.sh`
+
+Based on Geminifs version. Modifications:
+- Remove interactive confirmation prompt entirely
+- Remove ANSI color codes
+- Status/progress messages to stderr
+- Exit code 0 on success, non-zero on failure
+
+### Python Parsing Contract
+
+`device.py` parses script stdout for `KEY=VALUE` lines:
+- From format/bind scripts: extract `DEVICE_PATH` to get the `/dev/nvmeXnY` path
+- From raid0_create: extract `RAID_DEVICE` to get the `/dev/mdX` path
+- Stderr is logged for debugging but not parsed for control flow
 
 ## Fio Job Generation & Execution (`fio.py`)
 
