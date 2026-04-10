@@ -416,4 +416,6 @@ def generate_all_plots(csv_path: Path, plots_dir: Path, plot_format: str):
     plot_bandwidth_iops_by_qd(csv_path, plots_dir, plot_format)
     plot_bandwidth_iops_by_bs(csv_path, plots_dir, plot_format)
     plot_bandwidth_iops_by_nj(csv_path, plots_dir, plot_format)
-    plot_latency(csv_path, plots_dir, plot_format)
+    plot_latency_by_qd(csv_path, plots_dir, plot_format)
+    plot_latency_by_bs(csv_path, plots_dir, plot_format)
+    plot_latency_by_nj(csv_path, plots_dir, plot_format)
