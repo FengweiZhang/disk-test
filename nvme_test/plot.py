@@ -295,6 +295,58 @@ def plot_latency_by_bs(csv_path: Path, plots_dir: Path, plot_format: str):
         logger.info("Saved plot: %s", out_path.name)
 
 
+def plot_latency_by_nj(csv_path: Path, plots_dir: Path, plot_format: str):
+    """Generate line plots for avg latency with p99 error band, numjobs X-axis.
+
+    One chart per workload.
+    X-axis: numjobs (log2). Lines: each (block_size, iodepth) combo.
+    """
+    rows = _load_csv(csv_path)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    workloads = sorted(set(r["workload"] for r in rows))
+
+    for workload in workloads:
+        wl_rows = _filter_rows(rows, workload=workload)
+        if not wl_rows:
+            continue
+
+        block_sizes = sorted(set(r["block_size"] for r in wl_rows),
+                             key=_parse_block_size)
+        iodepths = sorted(set(r["iodepth"] for r in wl_rows))
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for bs in block_sizes:
+            for qd in iodepths:
+                series = _filter_rows(wl_rows, block_size=bs, iodepth=qd)
+                if not series:
+                    continue
+                series.sort(key=lambda r: r["numjobs"])
+                x = [r["numjobs"] for r in series]
+                y_avg = [r["lat_avg_us"] for r in series]
+                y_p99 = [r["lat_p99_us"] for r in series]
+                label = f"{bs}_qd{qd}"
+                (line,) = ax.plot(x, y_avg, marker="o", label=label)
+                ax.fill_between(x, y_avg, y_p99, alpha=0.2,
+                                color=line.get_color())
+
+        ax.set_xlabel("Number of Jobs")
+        ax.set_ylabel("Latency (us)")
+        ax.set_title(f"{workload} - Avg Latency (by numjobs)")
+        ax.set_xscale("log", base=2)
+        all_nj = sorted(set(r["numjobs"] for r in wl_rows))
+        ax.set_xticks(all_nj)
+        ax.set_xticklabels([str(nj) for nj in all_nj])
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        fig.tight_layout()
+
+        out_path = plots_dir / f"{workload}_latency_by_nj.{plot_format}"
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("Saved plot: %s", out_path.name)
+
+
 def plot_latency(csv_path: Path, plots_dir: Path, plot_format: str):
     """Generate bar charts with error bars for latency.
 
