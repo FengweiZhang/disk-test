@@ -66,6 +66,7 @@ def prepare_all_devices(config: dict) -> tuple[str, str | None]:
     """Prepare all devices from config. Returns (test_target_device, raid_device_or_None).
 
     If use_raid is True, creates a RAID0 array and returns the RAID device path.
+    If use_raid is False and multiple devices, returns colon-separated paths for fio multi-device mode.
     Otherwise returns the single device path.
     """
     devices_cfg = config["devices"]
@@ -81,7 +82,12 @@ def prepare_all_devices(config: dict) -> tuple[str, str | None]:
         raid_device = create_raid(device_paths, devices_cfg["raid_chunk_size"])
         return raid_device, raid_device
     else:
-        return device_paths[0], None
+        if len(device_paths) > 1:
+            test_device = ":".join(device_paths)
+            logger.info("Multi-device mode (no RAID): %s", test_device)
+        else:
+            test_device = device_paths[0]
+        return test_device, None
 
 
 def create_raid(device_paths: list[str], chunk_size: str) -> str:
