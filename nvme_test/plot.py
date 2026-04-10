@@ -44,7 +44,7 @@ def _filter_rows(rows: list[dict], **kwargs) -> list[dict]:
     return result
 
 
-def plot_bandwidth_iops(csv_path: Path, plots_dir: Path, plot_format: str):
+def plot_bandwidth_iops_by_qd(csv_path: Path, plots_dir: Path, plot_format: str):
     """Generate line plots for bandwidth and IOPS.
 
     One chart per (workload, metric).
@@ -85,7 +85,7 @@ def plot_bandwidth_iops(csv_path: Path, plots_dir: Path, plot_format: str):
             ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
             fig.tight_layout()
 
-            out_path = plots_dir / f"{workload}_{file_suffix}.{plot_format}"
+            out_path = plots_dir / f"{workload}_{file_suffix}_by_qd.{plot_format}"
             fig.savefig(out_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
             logger.info("Saved plot: %s", out_path.name)
@@ -194,6 +194,55 @@ def plot_bandwidth_iops_by_nj(csv_path: Path, plots_dir: Path, plot_format: str)
             logger.info("Saved plot: %s", out_path.name)
 
 
+def plot_latency_by_qd(csv_path: Path, plots_dir: Path, plot_format: str):
+    """Generate line plots for avg latency with p99 error band.
+
+    One chart per workload.
+    X-axis: iodepth (log2). Lines: each (block_size, numjobs) combo.
+    """
+    rows = _load_csv(csv_path)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    workloads = sorted(set(r["workload"] for r in rows))
+
+    for workload in workloads:
+        wl_rows = _filter_rows(rows, workload=workload)
+        if not wl_rows:
+            continue
+
+        block_sizes = sorted(set(r["block_size"] for r in wl_rows),
+                             key=_parse_block_size)
+        numjobs_list = sorted(set(r["numjobs"] for r in wl_rows))
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for bs in block_sizes:
+            for nj in numjobs_list:
+                series = _filter_rows(wl_rows, block_size=bs, numjobs=nj)
+                if not series:
+                    continue
+                series.sort(key=lambda r: r["iodepth"])
+                x = [r["iodepth"] for r in series]
+                y_avg = [r["lat_avg_us"] for r in series]
+                y_p99 = [r["lat_p99_us"] for r in series]
+                label = f"{bs}_nj{nj}"
+                (line,) = ax.plot(x, y_avg, marker="o", label=label)
+                ax.fill_between(x, y_avg, y_p99, alpha=0.2,
+                                color=line.get_color())
+
+        ax.set_xlabel("IO Depth")
+        ax.set_ylabel("Latency (us)")
+        ax.set_title(f"{workload} - Avg Latency (by iodepth)")
+        ax.set_xscale("log", base=2)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        fig.tight_layout()
+
+        out_path = plots_dir / f"{workload}_latency_by_qd.{plot_format}"
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("Saved plot: %s", out_path.name)
+
+
 def plot_latency(csv_path: Path, plots_dir: Path, plot_format: str):
     """Generate bar charts with error bars for latency.
 
@@ -260,7 +309,7 @@ def plot_latency(csv_path: Path, plots_dir: Path, plot_format: str):
 
 def generate_all_plots(csv_path: Path, plots_dir: Path, plot_format: str):
     """Generate all plots from results CSV."""
-    plot_bandwidth_iops(csv_path, plots_dir, plot_format)
+    plot_bandwidth_iops_by_qd(csv_path, plots_dir, plot_format)
     plot_bandwidth_iops_by_bs(csv_path, plots_dir, plot_format)
     plot_bandwidth_iops_by_nj(csv_path, plots_dir, plot_format)
     plot_latency(csv_path, plots_dir, plot_format)
