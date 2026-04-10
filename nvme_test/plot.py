@@ -137,7 +137,7 @@ def plot_bandwidth_iops_by_bs(csv_path: Path, plots_dir: Path, plot_format: str)
             ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
             fig.tight_layout()
 
-            out_path = plots_dir / f"{workload}_by_bs_{file_suffix}.{plot_format}"
+            out_path = plots_dir / f"{workload}_{file_suffix}_by_bs.{plot_format}"
             fig.savefig(out_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
             logger.info("Saved plot: %s", out_path.name)
@@ -188,7 +188,7 @@ def plot_bandwidth_iops_by_nj(csv_path: Path, plots_dir: Path, plot_format: str)
             ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
             fig.tight_layout()
 
-            out_path = plots_dir / f"{workload}_by_nj_{file_suffix}.{plot_format}"
+            out_path = plots_dir / f"{workload}_{file_suffix}_by_nj.{plot_format}"
             fig.savefig(out_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
             logger.info("Saved plot: %s", out_path.name)
