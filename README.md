@@ -58,7 +58,7 @@ All test parameters are defined in a JSON config file. See `config.json` for a f
 |-------|------|-------------|
 | `pci_addresses` | string[] | PCI BDF addresses of NVMe devices (e.g., `["0000:50:00.0"]`). |
 | `format_before_test` | bool | If `true`, format and secure-erase each device before testing. If `false`, only bind to the nvme driver. |
-| `use_raid` | bool | If `true`, create a software RAID0 array from all listed devices. Requires at least 2 devices. |
+| `use_raid` | bool | If `true`, create a software RAID0 array from all listed devices. Requires at least 2 devices. If `false` with 2+ devices, uses fio's native multi-device mode (colon-separated `filename`) to test all devices in parallel without RAID. |
 | `raid_chunk_size` | string | RAID0 stripe/chunk size (e.g., `"64K"`, `"256K"`). Only used when `use_raid` is `true`. |
 
 ### `fio` section
@@ -172,6 +172,37 @@ The total number of fio jobs = `len(block_sizes)` x `len(numjobs)` x `len(iodept
   }
 }
 ```
+
+**Multi-disk without RAID** (fio native multi-device):
+
+```json
+{
+  "test_name": "dual_nvme_no_raid",
+  "devices": {
+    "pci_addresses": ["0000:50:00.0", "0000:51:00.0"],
+    "format_before_test": true,
+    "use_raid": false,
+    "raid_chunk_size": "64K"
+  },
+  "fio": {
+    "block_sizes": ["4K", "16K", "64K", "256K"],
+    "numjobs": [1, 2, 4],
+    "iodepth": [1, 4, 16, 32, 64, 128],
+    "workloads": ["read", "write", "randread", "randwrite"],
+    "runtime": 30,
+    "ramp_time": 10,
+    "direct": 1,
+    "ioengine": "libaio",
+    "size": "100%"
+  },
+  "output": {
+    "base_dir": "./output",
+    "plot_format": "png"
+  }
+}
+```
+
+When `use_raid` is `false` and multiple PCI addresses are listed, fio tests all devices in parallel using its native colon-separated `filename` syntax. No RAID array is created. Results show the aggregated performance across all devices.
 
 ## CSV Output
 
