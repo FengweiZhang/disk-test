@@ -22,24 +22,59 @@ sudo python main.py -c config.json
 
 The tool will:
 1. Prepare NVMe devices (format or bind based on config)
-2. Optionally create a RAID0 array
-3. Generate and run fio jobs for the full test matrix
-4. Collect results into a CSV file
-5. Generate performance plots
-6. Clean up RAID if created
+2. Expand the run into aggregate and/or per-device scenarios
+3. Optionally create a RAID0 array for the aggregate scenario
+4. Generate and run fio jobs for each scenario's full test matrix
+5. Collect results into CSV files
+6. Generate per-scenario plots and optional cross-device comparison plots
+7. Clean up RAID if created
 
 ### Output
 
-Results are saved to `output/<test_name>_<YYYYMMDD_HHMMSS>/`:
+Results are saved to `output/<test_name>_<YYYYMMDD_HHMMSS>/`.
+
+For configs without an `execution` section, the output remains compatible with the existing aggregate-only behavior, but is now nested under `aggregate/`:
 
 ```
 output/single_nvme_baseline_20260402_143022/
-├── config.json      # Copy of config used for this run
-├── fio_jobs/        # Generated .fio job files
-├── fio_raw/         # Raw fio JSON outputs and logs
-├── csv/
-│   └── results.csv  # Aggregated results
-└── plots/           # Performance charts (PNG or PDF)
+├── config.json
+├── run_summary.json
+└── aggregate/
+    ├── fio_jobs/
+    ├── fio_raw/
+    ├── csv/
+    │   └── results.csv
+    └── plots/
+```
+
+For combined aggregate + per-device runs:
+
+```
+output/per_device_and_aggregate_20260419_120000/
+├── config.json
+├── run_summary.json
+├── aggregate/
+│   ├── fio_jobs/
+│   ├── fio_raw/
+│   ├── csv/results.csv
+│   └── plots/
+├── per_device/
+│   ├── 0000_50_00_0/
+│   │   ├── fio_jobs/
+│   │   ├── fio_raw/
+│   │   ├── csv/results.csv
+│   │   └── plots/
+│   └── 0000_51_00_0/
+│       ├── fio_jobs/
+│       ├── fio_raw/
+│       ├── csv/results.csv
+│       └── plots/
+└── comparison/
+    ├── csv/
+    │   ├── all_results.csv
+    │   ├── best_points.csv
+    │   └── fixed_points.csv
+    └── plots/
 ```
 
 ## Configuration
@@ -60,6 +95,32 @@ All test parameters are defined in a JSON config file. See `config.json` for a f
 | `format_before_test` | bool | If `true`, format and secure-erase each device before testing. If `false`, only bind to the nvme driver. |
 | `use_raid` | bool | If `true`, create a software RAID0 array from all listed devices. Requires at least 2 devices. If `false` with 2+ devices, uses fio's native multi-device mode (colon-separated `filename`) to test all devices in parallel without RAID. |
 | `raid_chunk_size` | string | RAID0 stripe/chunk size (e.g., `"64K"`, `"256K"`). Only used when `use_raid` is `true`. |
+
+### `execution` section
+
+The `execution` section is optional. If omitted, the tool behaves as an aggregate-only run:
+
+```json
+{
+  "execution": {
+    "run_aggregate": true,
+    "run_per_device": false,
+    "prepare_mode": "once",
+    "comparison_summary": {
+      "best_points": false,
+      "fixed_points": []
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `run_aggregate` | bool | If `true`, run the existing aggregate scenario. For multiple devices this means RAID0 when `devices.use_raid` is `true`, otherwise fio native multi-device mode. |
+| `run_per_device` | bool | If `true`, run the full fio matrix separately for each PCI address in `devices.pci_addresses`. |
+| `prepare_mode` | string | `"once"` prepares all devices once at run start. `"per_test"` prepares the devices needed by each scenario before that scenario starts. |
+| `comparison_summary.best_points` | bool | If `true`, write best bandwidth, best IOPS, and best latency summaries and overview plots. |
+| `comparison_summary.fixed_points` | object[] | Fixed fio matrix points to compare across targets. Each item has `name`, `workload`, `block_size`, `numjobs`, and `iodepth`. |
 
 ### `fio` section
 
@@ -204,9 +265,51 @@ The total number of fio jobs = `len(block_sizes)` x `len(numjobs)` x `len(iodept
 
 When `use_raid` is `false` and multiple PCI addresses are listed, fio tests all devices in parallel using its native colon-separated `filename` syntax. No RAID array is created. Results show the aggregated performance across all devices.
 
+**Per-device only**:
+
+```json
+{
+  "test_name": "per_device_only",
+  "devices": {
+    "pci_addresses": ["0000:50:00.0", "0000:51:00.0"],
+    "format_before_test": false,
+    "use_raid": false,
+    "raid_chunk_size": "64K"
+  },
+  "execution": {
+    "run_aggregate": false,
+    "run_per_device": true,
+    "prepare_mode": "once",
+    "comparison_summary": {
+      "best_points": true,
+      "fixed_points": []
+    }
+  },
+  "fio": {
+    "block_sizes": ["4K", "64K"],
+    "numjobs": [1],
+    "iodepth": [1, 16],
+    "workloads": ["randread", "randwrite"],
+    "runtime": 5,
+    "ramp_time": 2,
+    "direct": 1,
+    "ioengine": "libaio",
+    "size": "100%"
+  },
+  "output": {
+    "base_dir": "./output",
+    "plot_format": "png"
+  }
+}
+```
+
+**Per-device + aggregate with comparison summaries**:
+
+See `config_per_device_compare.json` for a compact example that runs every listed NVMe individually, runs the aggregate target, writes best-result summaries, and compares a fixed `4K/randread/numjobs=4/iodepth=64` test point.
+
 ## CSV Output
 
-The results CSV (`csv/results.csv`) contains one row per fio job:
+Each scenario results CSV (`aggregate/csv/results.csv` or `per_device/<pci>/csv/results.csv`) contains one row per fio job:
 
 | Column | Description |
 |--------|-------------|
@@ -221,8 +324,32 @@ The results CSV (`csv/results.csv`) contains one row per fio job:
 | `lat_p99_us` | P99 latency in microseconds |
 | `lat_max_us` | Maximum latency in microseconds |
 
+Comparison CSVs are written under `comparison/csv/`:
+
+| File | Description |
+|------|-------------|
+| `all_results.csv` | Merged scenario results with `target_id`, `target_label`, and `target_type` metadata columns. |
+| `best_points.csv` | One row per target/workload/summary type for best bandwidth, best IOPS, and best average latency. |
+| `fixed_points.csv` | One row per configured fixed comparison point per target. |
+
 ## Plots
 
 **Bandwidth & IOPS** (line plots): One chart per workload type. X-axis = IO depth, separate lines for each (block_size, numjobs) combination.
 
-**Latency** (bar charts): One chart per (workload, block_size). X-axis = IO depth, grouped bars for each numjobs value. Bar height = average latency, error bar = P99 latency.
+**Latency** (line plots): One chart per workload. Average latency is plotted as the line, with a semi-transparent band up to P99 latency.
+
+**Comparison overview plots** are written under `comparison/plots/` when enabled:
+
+- `best_bandwidth_overview.<format>`
+- `best_iops_overview.<format>`
+- `best_latency_overview.<format>`
+- `<fixed_point_name>_overview.<format>`
+
+## Run Summary
+
+Every run writes `run_summary.json` at the run root. It records:
+
+- run start/end time and total duration
+- `prepare_mode`
+- every scenario's status, target label, job counts, CSV path, and plots directory
+- comparison status, included targets, generated CSVs, generated plots, and missing fixed points if any

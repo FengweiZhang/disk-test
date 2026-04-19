@@ -1,17 +1,11 @@
 import argparse
-import json
 import logging
 import shutil
-import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
 from nvme_test.config import load_config
-from nvme_test.device import prepare_all_devices, teardown_raid
-from nvme_test.fio import generate_all_jobs, run_all_jobs
-from nvme_test.results import aggregate_results
-from nvme_test.plot import generate_all_plots
+from nvme_test.orchestrator import run_test_plan
 
 
 def setup_logging():
@@ -44,55 +38,25 @@ def main():
     )
     args = parser.parse_args()
 
-    # Step 1: Load config
-    config = load_config(args.config)
+    config_path = Path(args.config)
+    config = load_config(str(config_path))
     logger.info("Loaded config: test_name=%s", config["test_name"])
 
-    # Step 2: Create output directory
     test_dir = create_test_dir(config)
     logger.info("Output directory: %s", test_dir)
+    shutil.copy2(config_path, test_dir / "config.json")
 
-    # Step 3: Copy config for reproducibility
-    shutil.copy2(args.config, test_dir / "config.json")
+    summary = run_test_plan(config=config, config_path=config_path, test_dir=test_dir)
+    total_jobs = sum(scenario["jobs_total"] for scenario in summary["scenarios"])
+    successful_jobs = sum(scenario["jobs_succeeded"] for scenario in summary["scenarios"])
 
-    start_time = time.time()
-
-    # Step 4-5: Prepare devices
-    test_device, raid_device = prepare_all_devices(config)
-    logger.info("Test target device: %s", test_device)
-
-    try:
-        # Step 6: Generate fio jobs
-        jobs_dir = test_dir / "fio_jobs"
-        job_files = generate_all_jobs(config["fio"], test_device, jobs_dir)
-
-        # Step 7: Run fio jobs
-        raw_dir = test_dir / "fio_raw"
-        json_paths = run_all_jobs(job_files, raw_dir)
-
-        # Step 8: Aggregate results
-        csv_dir = test_dir / "csv"
-        csv_path = aggregate_results(json_paths, csv_dir)
-
-        # Step 9: Generate plots
-        plots_dir = test_dir / "plots"
-        plot_format = config["output"]["plot_format"]
-        generate_all_plots(csv_path, plots_dir, plot_format)
-
-    finally:
-        # Step 10: RAID teardown
-        if raid_device is not None:
-            teardown_raid(raid_device)
-
-    # Step 11: Summary
-    elapsed = time.time() - start_time
-    total_jobs = len(job_files)
-    successful = len(json_paths)
     logger.info("=" * 60)
     logger.info("Test complete!")
     logger.info("  Output directory: %s", test_dir)
-    logger.info("  Jobs: %d/%d successful", successful, total_jobs)
-    logger.info("  Total time: %.1f seconds (%.1f minutes)", elapsed, elapsed / 60)
+    logger.info("  Scenarios: %d", len(summary["scenarios"]))
+    logger.info("  Jobs: %d/%d successful", successful_jobs, total_jobs)
+    logger.info("  Comparison: %s", summary["comparison"]["status"])
+    logger.info("  Total time: %.1f seconds (%.1f minutes)", summary["duration_seconds"], summary["duration_seconds"] / 60)
     logger.info("=" * 60)
 
 

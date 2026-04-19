@@ -1,29 +1,17 @@
-import csv
 import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from nvme_test.results import load_results_csv
+
 logger = logging.getLogger(__name__)
 
 
 def _load_csv(csv_path: Path) -> list[dict]:
     """Load CSV results into list of dicts with numeric conversion."""
-    rows = []
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            row["numjobs"] = int(row["numjobs"])
-            row["iodepth"] = int(row["iodepth"])
-            row["bw_MBps"] = float(row["bw_MBps"])
-            row["iops"] = float(row["iops"])
-            row["lat_avg_us"] = float(row["lat_avg_us"])
-            row["lat_p50_us"] = float(row["lat_p50_us"])
-            row["lat_p99_us"] = float(row["lat_p99_us"])
-            row["lat_max_us"] = float(row["lat_max_us"])
-            rows.append(row)
-    return rows
+    return load_results_csv(csv_path)
 
 
 def _parse_block_size(s: str) -> int:
@@ -419,3 +407,134 @@ def generate_all_plots(csv_path: Path, plots_dir: Path, plot_format: str):
     plot_latency_by_qd(csv_path, plots_dir, plot_format)
     plot_latency_by_bs(csv_path, plots_dir, plot_format)
     plot_latency_by_nj(csv_path, plots_dir, plot_format)
+
+
+def generate_comparison_plots(
+    all_results_csv: Path,
+    best_points_csv: Path | None,
+    fixed_points_csv: Path | None,
+    plots_dir: Path,
+    plot_format: str,
+) -> list[Path]:
+    """Generate compact cross-target comparison overview plots."""
+    del all_results_csv
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    generated = []
+
+    if best_points_csv is not None and best_points_csv.exists():
+        best_rows = load_results_csv(best_points_csv)
+        generated.extend(_plot_best_point_overviews(best_rows, plots_dir, plot_format))
+
+    if fixed_points_csv is not None and fixed_points_csv.exists():
+        fixed_rows = load_results_csv(fixed_points_csv)
+        generated.extend(_plot_fixed_point_overviews(fixed_rows, plots_dir, plot_format))
+
+    return generated
+
+
+def _plot_best_point_overviews(rows: list[dict], plots_dir: Path, plot_format: str) -> list[Path]:
+    generated = []
+    plot_specs = [
+        ("best_bw", "bw_MBps", "Best Bandwidth (MB/s)", "best_bandwidth_overview"),
+        ("best_iops", "iops", "Best IOPS", "best_iops_overview"),
+        ("best_latency", "lat_avg_us", "Best Avg Latency (us, lower is better)", "best_latency_overview"),
+    ]
+
+    for summary_type, metric_key, ylabel, filename in plot_specs:
+        subset = [row for row in rows if row["summary_type"] == summary_type]
+        if not subset:
+            continue
+
+        workloads = sorted(set(row["workload"] for row in subset))
+        targets = _sorted_targets(subset)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        x_indices = np.arange(len(workloads))
+        bar_width = 0.8 / max(len(targets), 1)
+
+        for index, target in enumerate(targets):
+            values = []
+            for workload in workloads:
+                match = _find_target_workload_row(subset, target, workload)
+                values.append(match[metric_key] if match else 0)
+            offset = (index - len(targets) / 2 + 0.5) * bar_width
+            ax.bar(x_indices + offset, values, bar_width, label=target)
+
+        ax.set_xlabel("Workload")
+        ax.set_ylabel(ylabel)
+        ax.set_title(ylabel)
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(workloads)
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        fig.tight_layout()
+
+        out_path = plots_dir / f"{filename}.{plot_format}"
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("Saved plot: %s", out_path.name)
+        generated.append(out_path)
+
+    return generated
+
+
+def _plot_fixed_point_overviews(rows: list[dict], plots_dir: Path, plot_format: str) -> list[Path]:
+    generated = []
+    point_names = sorted(set(row["point_name"] for row in rows))
+    metrics = [
+        ("bw_MBps", "Bandwidth (MB/s)"),
+        ("iops", "IOPS"),
+        ("lat_avg_us", "Avg Latency (us)"),
+    ]
+
+    for point_name in point_names:
+        subset = [row for row in rows if row["point_name"] == point_name]
+        if not subset:
+            continue
+
+        targets = _sorted_targets(subset)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        for ax, (metric_key, ylabel) in zip(axes, metrics):
+            values = []
+            for target in targets:
+                match = _find_target_row(subset, target)
+                values.append(match[metric_key] if match else 0)
+
+            ax.bar(np.arange(len(targets)), values)
+            ax.set_title(ylabel)
+            ax.set_ylabel(ylabel)
+            ax.set_xticks(np.arange(len(targets)))
+            ax.set_xticklabels(targets, rotation=30, ha="right")
+            if metric_key == "lat_avg_us":
+                ax.set_title(f"{ylabel} (lower is better)")
+
+        fig.suptitle(f"Fixed Point: {point_name}")
+        fig.tight_layout()
+
+        out_path = plots_dir / f"{point_name}_overview.{plot_format}"
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        logger.info("Saved plot: %s", out_path.name)
+        generated.append(out_path)
+
+    return generated
+
+
+def _sorted_targets(rows: list[dict]) -> list[str]:
+    return sorted(
+        set(row["target_label"] for row in rows),
+        key=lambda target: (1 if target == "aggregate" else 0, target),
+    )
+
+
+def _find_target_workload_row(rows: list[dict], target: str, workload: str) -> dict | None:
+    for row in rows:
+        if row["target_label"] == target and row["workload"] == workload:
+            return row
+    return None
+
+
+def _find_target_row(rows: list[dict], target: str) -> dict | None:
+    for row in rows:
+        if row["target_label"] == target:
+            return row
+    return None
