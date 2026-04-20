@@ -345,6 +345,11 @@ Comparison CSVs are written under `comparison/csv/`:
 - `best_latency_overview.<format>`
 - `<fixed_point_name>_overview.<format>`
 
+Comparison images include an embedded configuration table:
+
+- Fixed-point overview plots show `name`, `workload`, `block_size`, `numjobs`, and `iodepth`.
+- Best overview plots show the `workload`, `target`, `block_size`, `numjobs`, and `iodepth` that produced each best value.
+
 ## Run Summary
 
 Every run writes `run_summary.json` at the run root. It records:

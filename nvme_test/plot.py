@@ -32,6 +32,47 @@ def _filter_rows(rows: list[dict], **kwargs) -> list[dict]:
     return result
 
 
+def _add_config_table(fig, rows: list[dict], columns: list[tuple[str, str]]):
+    """Add a compact config table to the bottom of a matplotlib figure."""
+    if not rows:
+        return
+
+    row_count = len(rows)
+    table_height = min(0.34, 0.09 + row_count * 0.035)
+    table_bottom = 0.02
+    plot_bottom = table_bottom + table_height + 0.04
+    fig.subplots_adjust(bottom=plot_bottom)
+
+    table_ax = fig.add_axes([0.04, table_bottom, 0.92, table_height])
+    table_ax.axis("off")
+
+    cell_text = [
+        [_format_config_value(row.get(key, "")) for _, key in columns]
+        for row in rows
+    ]
+    table = table_ax.table(
+        cellText=cell_text,
+        colLabels=[label for label, _ in columns],
+        loc="center",
+        cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(1, 1.15)
+
+    for (row_index, _), cell in table.get_celld().items():
+        if row_index == 0:
+            cell.set_text_props(weight="bold")
+            cell.set_facecolor("#f0f0f0")
+
+
+def _format_config_value(value) -> str:
+    """Format config values for plot tables."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def plot_bandwidth_iops_by_qd(csv_path: Path, plots_dir: Path, plot_format: str):
     """Generate line plots for bandwidth and IOPS.
 
@@ -447,7 +488,9 @@ def _plot_best_point_overviews(rows: list[dict], plots_dir: Path, plot_format: s
 
         workloads = sorted(set(row["workload"] for row in subset))
         targets = _sorted_targets(subset)
-        fig, ax = plt.subplots(figsize=(10, 6))
+        table_rows = _best_config_table_rows(subset, workloads, targets)
+        fig_height = max(7.5, 6.2 + len(table_rows) * 0.18)
+        fig, ax = plt.subplots(figsize=(11, fig_height))
         x_indices = np.arange(len(workloads))
         bar_width = 0.8 / max(len(targets), 1)
 
@@ -466,6 +509,17 @@ def _plot_best_point_overviews(rows: list[dict], plots_dir: Path, plot_format: s
         ax.set_xticklabels(workloads)
         ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
         fig.tight_layout()
+        _add_config_table(
+            fig,
+            table_rows,
+            [
+                ("workload", "workload"),
+                ("target", "target"),
+                ("block_size", "block_size"),
+                ("numjobs", "numjobs"),
+                ("iodepth", "iodepth"),
+            ],
+        )
 
         out_path = plots_dir / f"{filename}.{plot_format}"
         fig.savefig(out_path, dpi=150, bbox_inches="tight")
@@ -491,7 +545,8 @@ def _plot_fixed_point_overviews(rows: list[dict], plots_dir: Path, plot_format: 
             continue
 
         targets = _sorted_targets(subset)
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        table_rows = [_fixed_point_config_row(subset[0])]
+        fig, axes = plt.subplots(1, 3, figsize=(15, 6.5))
 
         for ax, (metric_key, ylabel) in zip(axes, metrics):
             values = []
@@ -509,6 +564,17 @@ def _plot_fixed_point_overviews(rows: list[dict], plots_dir: Path, plot_format: 
 
         fig.suptitle(f"Fixed Point: {point_name}")
         fig.tight_layout()
+        _add_config_table(
+            fig,
+            table_rows,
+            [
+                ("name", "name"),
+                ("workload", "workload"),
+                ("block_size", "block_size"),
+                ("numjobs", "numjobs"),
+                ("iodepth", "iodepth"),
+            ],
+        )
 
         out_path = plots_dir / f"{point_name}_overview.{plot_format}"
         fig.savefig(out_path, dpi=150, bbox_inches="tight")
@@ -524,6 +590,35 @@ def _sorted_targets(rows: list[dict]) -> list[str]:
         set(row["target_label"] for row in rows),
         key=lambda target: (1 if target == "aggregate" else 0, target),
     )
+
+
+def _best_config_table_rows(subset: list[dict], workloads: list[str], targets: list[str]) -> list[dict]:
+    table_rows = []
+    for workload in workloads:
+        for target in targets:
+            match = _find_target_workload_row(subset, target, workload)
+            if match is None:
+                continue
+            table_rows.append(
+                {
+                    "workload": workload,
+                    "target": target,
+                    "block_size": match["block_size"],
+                    "numjobs": match["numjobs"],
+                    "iodepth": match["iodepth"],
+                }
+            )
+    return table_rows
+
+
+def _fixed_point_config_row(row: dict) -> dict:
+    return {
+        "name": row["point_name"],
+        "workload": row["workload"],
+        "block_size": row["block_size"],
+        "numjobs": row["numjobs"],
+        "iodepth": row["iodepth"],
+    }
 
 
 def _find_target_workload_row(rows: list[dict], target: str, workload: str) -> dict | None:
