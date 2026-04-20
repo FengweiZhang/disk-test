@@ -10,6 +10,15 @@ run:
 per-device-compare:
 	sudo $(MPYTHON) main.py -c $(PER_DEVICE_COMPARE_CONFIG)
 
+gpu0:
+	sudo $(MPYTHON) main.py -c config_per_device_compare_gpu0.json
+
+gpu1:
+	sudo $(MPYTHON) main.py -c config_per_device_compare_gpu1.json
+
+gpu-all:
+	sudo $(MPYTHON) main.py -c config_per_device_compare_all.json
+
 plot:
 	sudo $(MPYTHON) -m nvme_test.plot $(ARGS)
 

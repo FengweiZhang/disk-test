@@ -1,18 +1,18 @@
 {
-  "test_name": "test_iops_1_disk",
+  "test_name": "quick_test_all_disk",
   "devices": {
-    "pci_addresses": ["0000:50:00.0"],
+    "pci_addresses": ["0000:50:00.0", "0000:51:00.0"],
     "format_before_test": true,
     "use_raid": false,
     "raid_chunk_size": "64K"
   },
   "fio": {
-    "block_sizes": ["4K"],
-    "numjobs": [8, 16, 32, 64],
-    "iodepth": [128, 1024],
+    "block_sizes": ["16K"],
+    "numjobs": [8],
+    "iodepth": [128, 256, 512, 1024],
     "workloads": ["read"],
-    "runtime": 10,
-    "ramp_time": 2,
+    "runtime": 30,
+    "ramp_time": 10,
     "direct": 1,
     "ioengine": "libaio",
     "size": "100%"

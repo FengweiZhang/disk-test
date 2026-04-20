@@ -1,0 +1,41 @@
+{
+  "test_name": "per_device_and_aggregate_gpu0",
+  "devices": {
+    "pci_addresses": ["0000:50:00.0", "0000:41:00.0"],
+    "format_before_test": true,
+    "use_raid": false,
+    "raid_chunk_size": "64K"
+  },
+  "execution": {
+    "run_aggregate": true,
+    "run_per_device": true,
+    "prepare_mode": "once",
+    "comparison_summary": {
+      "best_points": true,
+      "fixed_points": [
+        {
+          "name": "16k_read_hot",
+          "workload": "read",
+          "block_size": "16K",
+          "numjobs": 8,
+          "iodepth": 256
+        }
+      ]
+    }
+  },
+  "fio": {
+    "block_sizes": ["16K"],
+    "numjobs": [8],
+    "iodepth": [64, 256],
+    "workloads": ["read"],
+    "runtime": 30,
+    "ramp_time": 10,
+    "direct": 1,
+    "ioengine": "libaio",
+    "size": "100%"
+  },
+  "output": {
+    "base_dir": "./output",
+    "plot_format": "png"
+  }
+}
