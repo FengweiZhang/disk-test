@@ -1,7 +1,7 @@
 {
   "test_name": "per_device_and_aggregate",
   "devices": {
-    "pci_addresses": ["0000:50:00.0", "0000:51:00.0"],
+    "pci_addresses": ["0000:50:00.0", "0000:41:00.0"],
     "format_before_test": true,
     "use_raid": false,
     "raid_chunk_size": "64K"
@@ -14,22 +14,22 @@
       "best_points": true,
       "fixed_points": [
         {
-          "name": "4k_randread_hot",
-          "workload": "randread",
-          "block_size": "4K",
-          "numjobs": 4,
-          "iodepth": 64
+          "name": "16k_read_hot",
+          "workload": "read",
+          "block_size": "16K",
+          "numjobs": 8,
+          "iodepth": 256
         }
       ]
     }
   },
   "fio": {
-    "block_sizes": ["4K", "64K"],
-    "numjobs": [1, 4],
-    "iodepth": [1, 64],
-    "workloads": ["read", "randread"],
-    "runtime": 5,
-    "ramp_time": 2,
+    "block_sizes": ["16K"],
+    "numjobs": [8],
+    "iodepth": [64, 256],
+    "workloads": ["read"],
+    "runtime": 30,
+    "ramp_time": 10,
     "direct": 1,
     "ioengine": "libaio",
     "size": "100%"
