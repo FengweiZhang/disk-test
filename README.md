@@ -234,6 +234,16 @@ The total number of fio jobs = `len(block_sizes)` x `len(numjobs)` x `len(iodept
 }
 ```
 
+Manual RAID script usage also accepts PCI BDFs directly. The default RAID0 chunk size is `64K`:
+
+```bash
+sudo scripts/raid0_create.sh 0000:50:00.0 0000:51:00.0
+sudo scripts/raid0_create.sh --chunk 256K --raid-device /dev/md10 0000:50:00.0 0000:51:00.0
+sudo scripts/raid0_delete.sh 0000:50:00.0 0000:51:00.0
+```
+
+`raid0_delete.sh` zeros member md superblocks by default after stopping the array. Use `--no-zero-superblock` to only stop the md device.
+
 **Multi-disk without RAID** (fio native multi-device):
 
 ```json
