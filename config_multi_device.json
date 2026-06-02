@@ -1,16 +1,16 @@
 {
-  "test_name": "dual_nvme_no_raid",
+  "test_name": "all_device_test",
   "devices": {
-    "pci_addresses": ["0000:50:00.0", "0000:51:00.0"],
+    "pci_addresses": ["0000:50:00.0", "0000:51:00.0", "0000:41:00.0", "0000:44:00.0"],
     "format_before_test": true,
     "use_raid": false,
     "raid_chunk_size": "64K"
   },
   "fio": {
-    "block_sizes": ["4K", "16K", "64K", "256K"],
-    "numjobs": [1, 2, 4],
-    "iodepth": [1, 4, 16, 32, 64, 128],
-    "workloads": ["read", "write", "randread", "randwrite"],
+    "block_sizes": ["16K"],
+    "numjobs": [8, 16],
+    "iodepth": [64, 256],
+    "workloads": ["read"],
     "runtime": 30,
     "ramp_time": 10,
     "direct": 1,

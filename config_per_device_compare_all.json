@@ -14,20 +14,41 @@
       "best_points": true,
       "fixed_points": [
         {
-          "name": "16k_read_hot",
+          "name": "16k_read",
           "workload": "read",
           "block_size": "16K",
-          "numjobs": 8,
-          "iodepth": 256
+          "numjobs": 16,
+          "iodepth": 64
+        },
+        {
+          "name": "16k_write",
+          "workload": "write",
+          "block_size": "16K",
+          "numjobs": 16,
+          "iodepth": 64
+        },
+        {
+          "name": "512k_read",
+          "workload": "read",
+          "block_size": "512K",
+          "numjobs": 16,
+          "iodepth": 64
+        },
+        {
+          "name": "512k_write",
+          "workload": "write",
+          "block_size": "512K",
+          "numjobs": 16,
+          "iodepth": 64
         }
       ]
     }
   },
   "fio": {
-    "block_sizes": ["16K"],
-    "numjobs": [8],
-    "iodepth": [64, 256],
-    "workloads": ["read"],
+    "block_sizes": ["16K", "512K"],
+    "numjobs": [16],
+    "iodepth": [256],
+    "workloads": ["read", "write"],
     "runtime": 30,
     "ramp_time": 10,
     "direct": 1,

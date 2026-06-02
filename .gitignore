@@ -1,4 +1,11 @@
 __pycache__/
 *.pyc
+
 output/
+saved/
+
 .claude/
+.codex
+.superpowers/
+
+playground/**
