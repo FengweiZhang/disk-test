@@ -1,0 +1,28 @@
+{
+  "test_name": "write_bw_gpu0",
+  "devices": {
+    "pci_addresses": ["0000:50:00.0", "0000:41:00.0"],
+    "format_before_test": true,
+    "use_raid": false,
+    "raid_chunk_size": "64K"
+  },
+  "execution": {
+    "run_aggregate": true,
+    "run_per_device": false
+  },
+  "fio": {
+    "block_sizes": ["4K"],
+    "numjobs": [1, 2, 4, 8, 16, 32, 64, 128, 256],
+    "iodepth": [256],
+    "workloads": ["write"],
+    "runtime": 30,
+    "ramp_time": 10,
+    "direct": 1,
+    "ioengine": "libaio",
+    "size": "100%"
+  },
+  "output": {
+    "base_dir": "./output",
+    "plot_format": "png"
+  }
+}

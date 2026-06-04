@@ -234,11 +234,12 @@ The total number of fio jobs = `len(block_sizes)` x `len(numjobs)` x `len(iodept
 }
 ```
 
-Manual RAID script usage also accepts PCI BDFs directly. The default RAID0 chunk size is `64K`:
+Manual RAID script usage also accepts PCI BDFs directly. The default RAID0 chunk size is `64K`, and the new RAID device is initialized as `ext4` by default:
 
 ```bash
 sudo scripts/raid0_create.sh 0000:50:00.0 0000:51:00.0
 sudo scripts/raid0_create.sh --chunk 256K --raid-device /dev/md10 0000:50:00.0 0000:51:00.0
+sudo scripts/raid0_create.sh --no-filesystem 0000:50:00.0 0000:51:00.0
 sudo scripts/raid0_delete.sh 0000:50:00.0 0000:51:00.0
 ```
 

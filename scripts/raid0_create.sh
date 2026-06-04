@@ -2,11 +2,11 @@
 
 # Create a RAID 0 array from multiple NVMe devices selected by PCI BDF or block device path.
 # Non-interactive, for programmatic use.
-# Stdout: KEY=VALUE results (RAID_DEVICE, MEMBER_DEVICES)
+# Stdout: KEY=VALUE results (RAID_DEVICE, MEMBER_DEVICES, FILESYSTEM)
 # Stderr: status/progress messages
 # Exit 0 on success, non-zero on failure.
 #
-# Usage: ./raid0_create.sh [--chunk SIZE] [--raid-device /dev/mdX] <PCI_BDF|/dev/nvmeXnY> ...
+# Usage: ./raid0_create.sh [--chunk SIZE] [--filesystem TYPE|--no-filesystem] [--raid-device /dev/mdX] <PCI_BDF|/dev/nvmeXnY> ...
 # Example: ./raid0_create.sh --chunk 256K 0000:50:00.0 0000:51:00.0
 
 set -euo pipefail
@@ -14,15 +14,18 @@ set -euo pipefail
 log() { echo "$@" >&2; }
 
 CHUNK_SIZE="64K"
+FILESYSTEM="ext4"
+FORMAT_FILESYSTEM=1
 RAID_DEVICE=""
 INPUTS=()
 DEVICES=()
 
 usage() {
     local status="${1:-1}"
-    log "Usage: $0 [--chunk SIZE] [--raid-device /dev/mdX] <PCI_BDF|/dev/nvmeXnY> ..."
+    log "Usage: $0 [--chunk SIZE] [--filesystem TYPE|--no-filesystem] [--raid-device /dev/mdX] <PCI_BDF|/dev/nvmeXnY> ..."
     log "Example: $0 --chunk 256K 0000:50:00.0 0000:51:00.0"
     log "Default chunk size: 64K"
+    log "Default filesystem initialization: ext4"
     exit "$status"
 }
 
@@ -106,6 +109,51 @@ resolve_input_to_device_path() {
     resolve_pci_to_device_path "$input"
 }
 
+check_filesystem_tool() {
+    local filesystem="$1"
+
+    if [[ "$filesystem" == "ext4" ]]; then
+        if ! command -v mkfs.ext4 &> /dev/null; then
+            log "Error: 'mkfs.ext4' is not installed"
+            exit 1
+        fi
+        return
+    fi
+
+    if [[ "$filesystem" == "xfs" ]]; then
+        if ! command -v mkfs.xfs &> /dev/null; then
+            log "Error: 'mkfs.xfs' is not installed"
+            exit 1
+        fi
+        return
+    fi
+
+    if ! command -v mkfs &> /dev/null; then
+        log "Error: 'mkfs' is not installed"
+        exit 1
+    fi
+}
+
+format_raid_filesystem() {
+    local raid_device="$1"
+    local filesystem="$2"
+
+    if [[ "$filesystem" == "ext4" ]]; then
+        log "Initializing filesystem on $raid_device: ext4"
+        mkfs.ext4 -F "$raid_device" >&2
+        return
+    fi
+
+    if [[ "$filesystem" == "xfs" ]]; then
+        log "Initializing filesystem on $raid_device: xfs"
+        mkfs.xfs -f "$raid_device" >&2
+        return
+    fi
+
+    log "Initializing filesystem on $raid_device: $filesystem"
+    mkfs -t "$filesystem" "$raid_device" >&2
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -116,6 +164,23 @@ while [[ $# -gt 0 ]]; do
             fi
             CHUNK_SIZE="$2"
             shift 2
+            ;;
+        --filesystem|--fs)
+            if [[ $# -lt 2 ]]; then
+                log "Error: $1 requires a value"
+                usage
+            fi
+            FILESYSTEM="$2"
+            if [[ "$FILESYSTEM" == "none" ]]; then
+                FORMAT_FILESYSTEM=0
+            else
+                FORMAT_FILESYSTEM=1
+            fi
+            shift 2
+            ;;
+        --no-filesystem|--no-mkfs)
+            FORMAT_FILESYSTEM=0
+            shift
             ;;
         --raid-device|--md)
             if [[ $# -lt 2 ]]; then
@@ -217,6 +282,10 @@ log "Creating RAID 0 at $RAID_DEVICE with chunk=$CHUNK_SIZE using ${#DEVICES[@]}
 
 NUM_DEVICES=${#DEVICES[@]}
 
+if [[ "$FORMAT_FILESYSTEM" -eq 1 ]]; then
+    check_filesystem_tool "$FILESYSTEM"
+fi
+
 mdadm --create "$RAID_DEVICE" \
       --level=0 \
       --raid-devices=${NUM_DEVICES} \
@@ -227,6 +296,19 @@ mdadm --create "$RAID_DEVICE" \
 
 log "RAID 0 array created successfully at $RAID_DEVICE"
 
+if command -v udevadm &> /dev/null; then
+    udevadm settle >&2 || true
+fi
+
+if [[ "$FORMAT_FILESYSTEM" -eq 1 ]]; then
+    format_raid_filesystem "$RAID_DEVICE" "$FILESYSTEM"
+    log "Filesystem initialized on $RAID_DEVICE: $FILESYSTEM"
+else
+    FILESYSTEM="none"
+    log "Skipping filesystem initialization on $RAID_DEVICE"
+fi
+
 # Output machine-parseable result
 echo "RAID_DEVICE=$RAID_DEVICE"
 echo "MEMBER_DEVICES=${DEVICES[*]}"
+echo "FILESYSTEM=$FILESYSTEM"
