@@ -5,16 +5,24 @@
 # Stderr: status/progress messages
 # Exit 0 on success, non-zero on failure.
 #
-# Usage: ./bind_nvme_device.sh <PCI_BDF>
+# Usage: ./bind_nvme_device.sh [--clear-override] <PCI_BDF>
 # Example: ./bind_nvme_device.sh 0000:50:00.0
+#
+# By default a device pinned via driver_override (e.g. to 'snvme' for GIDS/BaM)
+# is reported and left alone. Pass --clear-override (or CLEAR_DRIVER_OVERRIDE=1)
+# to clear the pin before binding to nvme.
 
 set -e
 
 log() { echo "$@" >&2; }
 
 usage() {
-    log "Usage: $0 <PCI_BDF>"
+    log "Usage: $0 [--clear-override] <PCI_BDF>"
     log "Example: $0 0000:50:00.0"
+    log ""
+    log "Options:"
+    log "  --clear-override   Clear a driver_override pin (e.g. 'snvme') before binding."
+    log "                     Equivalent to setting CLEAR_DRIVER_OVERRIDE=1."
     exit 1
 }
 
@@ -74,14 +82,52 @@ unbind_current_driver() {
     local current_driver="$2"
     if [[ "$current_driver" != "none" ]]; then
         log "Unbinding $pci_bdf from current driver: $current_driver"
-        echo "$pci_bdf" > "/sys/bus/pci/drivers/$current_driver/unbind"
+        if ! echo "$pci_bdf" > "/sys/bus/pci/drivers/$current_driver/unbind" 2>/dev/null; then
+            log "Error: Failed to unbind $pci_bdf from $current_driver"
+            exit 1
+        fi
         log "Unbound from $current_driver"
+    fi
+}
+
+# Inspect driver_override, which can pin the device to a non-nvme driver.
+# When driver_override is set (e.g. to 'snvme' for GIDS/BaM), the PCI core
+# refuses to bind any other driver and 'echo BDF > nvme/bind' fails with ENODEV.
+#
+# By default this only reports the pin; it does NOT clear it, so a device
+# deliberately handed to GIDS/snvme is not silently stolen back. Set
+# CLEAR_DRIVER_OVERRIDE=1 (or pass --clear-override) to opt into clearing.
+handle_driver_override() {
+    local pci_bdf="$1"
+    local override_file="/sys/bus/pci/devices/$pci_bdf/driver_override"
+    [[ -f "$override_file" ]] || return 0
+
+    local override
+    override=$(cat "$override_file")
+    # An empty / "(null)" override means no pin is in effect.
+    if [[ -z "$override" || "$override" == "(null)" ]]; then
+        return 0
+    fi
+
+    if [[ "$CLEAR_DRIVER_OVERRIDE" == "1" ]]; then
+        log "Device $pci_bdf has driver_override pinned to '$override'; clearing it (CLEAR_DRIVER_OVERRIDE=1)"
+        if ! echo "" > "$override_file" 2>/dev/null; then
+            log "Error: Failed to clear driver_override for $pci_bdf"
+            exit 1
+        fi
+    else
+        log "Error: Device $pci_bdf has driver_override pinned to '$override'"
+        log "       The PCI core will reject binding to nvme while this pin is set."
+        log "       Re-run with --clear-override (or CLEAR_DRIVER_OVERRIDE=1) to clear it."
+        exit 1
     fi
 }
 
 bind_to_nvme() {
     local pci_bdf="$1"
     log "Binding $pci_bdf to nvme driver..."
+
+    handle_driver_override "$pci_bdf"
 
     local vendor_id device_id
     vendor_id=$(cat "/sys/bus/pci/devices/$pci_bdf/vendor")
@@ -93,7 +139,16 @@ bind_to_nvme() {
         echo "$vendor_id $device_id" > /sys/bus/pci/drivers/nvme/new_id 2>/dev/null || true
     fi
 
-    echo "$pci_bdf" > /sys/bus/pci/drivers/nvme/bind
+    # Capture the kernel's error instead of letting 'set -e' abort silently.
+    # The command group keeps echo's stdout going to the sysfs file while the
+    # outer 2>&1 routes bash's write error to the command substitution.
+    local bind_err
+    if ! bind_err=$( { echo "$pci_bdf" > /sys/bus/pci/drivers/nvme/bind; } 2>&1 ); then
+        log "Error: Failed to bind $pci_bdf to nvme driver: ${bind_err:-write to nvme/bind failed}"
+        log "Hint: a stale driver_override or another driver (e.g. snvme) still claiming the device"
+        log "      can cause an ENODEV ('No such device') on bind. Current driver: $(get_current_driver "$pci_bdf")"
+        exit 1
+    fi
     log "Bound to nvme driver"
 }
 
@@ -137,7 +192,29 @@ resolve_device_path() {
 }
 
 main() {
-    local pci_bdf="$1"
+    # Parse options. CLEAR_DRIVER_OVERRIDE may also be set in the environment.
+    CLEAR_DRIVER_OVERRIDE="${CLEAR_DRIVER_OVERRIDE:-0}"
+    local pci_bdf=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --clear-override)
+                CLEAR_DRIVER_OVERRIDE=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                ;;
+            -*)
+                log "Error: Unknown option: $1"
+                usage
+                ;;
+            *)
+                pci_bdf="$1"
+                shift
+                ;;
+        esac
+    done
+
     if [[ -z "$pci_bdf" ]]; then
         usage
     fi
