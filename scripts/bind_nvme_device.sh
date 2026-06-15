@@ -156,14 +156,27 @@ bind_to_nvme() {
 resolve_device_path() {
     local pci_bdf="$1"
 
-    # Wait briefly for the driver to register the device
+    # Wait briefly for the driver to register the device AND at least one
+    # namespace. After bind, the kernel creates the controller (nvmeX) first
+    # and the namespace (nvmeXnY) slightly later, asynchronously. Retrying only
+    # the controller lookup races the namespace creation, so we poll for both
+    # together here.
     local retries=10
     local nvme_name=""
+    local ns_name=""
     for ((i=0; i<retries; i++)); do
         nvme_name=$(find /sys/bus/pci/devices/"$pci_bdf"/nvme -mindepth 1 -maxdepth 1 -name "nvme*" 2>/dev/null | head -1)
         if [[ -n "$nvme_name" ]]; then
             nvme_name=$(basename "$nvme_name")
-            break
+            # Find the first namespace (name may not follow <ctrl>nX pattern,
+            # e.g. nvme5n3 under nvme3).
+            for ns in /sys/class/nvme/"$nvme_name"/nvme*n*; do
+                if [[ -d "$ns" ]]; then
+                    ns_name=$(basename "$ns")
+                    break
+                fi
+            done
+            [[ -n "$ns_name" ]] && break
         fi
         sleep 0.5
     done
@@ -172,15 +185,6 @@ resolve_device_path() {
         log "Error: Could not resolve NVMe device name for $pci_bdf"
         exit 1
     fi
-
-    # Find the first namespace (name may not follow <ctrl>nX pattern, e.g. nvme5n3 under nvme3)
-    local ns_name=""
-    for ns in /sys/class/nvme/"$nvme_name"/nvme*n*; do
-        if [[ -d "$ns" ]]; then
-            ns_name=$(basename "$ns")
-            break
-        fi
-    done
 
     if [[ -z "$ns_name" ]]; then
         log "Error: No namespaces found for $nvme_name"
