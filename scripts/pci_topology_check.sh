@@ -74,11 +74,22 @@ while read -r line; do
     numa_node_path="/sys/bus/pci/devices/${full_bdf}/numa_node"
     numa_node=$(cat "$numa_node_path" 2>/dev/null || echo "N/A")
     upstream_bdf=$(basename "$(readlink -f "/sys/bus/pci/devices/${full_bdf}/..")")
-    device_path=$(find "/sys/bus/pci/devices/${full_bdf}/nvme" -name "nvme*n*" -print -quit 2>/dev/null)
-    if [ -n "$device_path" ]; then
-        device_name="/dev/$(basename "$device_path")"
+    driver_link="/sys/bus/pci/devices/${full_bdf}/driver"
+    if [ -L "$driver_link" ]; then
+        current_driver=$(basename "$(readlink "$driver_link")")
     else
-        device_name="N/A"
+        current_driver="none"
+    fi
+
+    if [ "$current_driver" = "nvme" ]; then
+        device_path=$(find "/sys/bus/pci/devices/${full_bdf}/nvme" -name "nvme*n*" -print -quit 2>/dev/null)
+        if [ -n "$device_path" ]; then
+            device_name="/dev/$(basename "$device_path")"
+        else
+            device_name="N/A"
+        fi
+    else
+        device_name="[${current_driver}]"
     fi
     nvmes["$full_bdf"]="${numa_node}|${upstream_bdf}|${device_name}"
     echo -e "Found NVMe: ${CYAN}${full_bdf}${NC} -> ${device_name} (NUMA: ${numa_node}, Upstream: ${upstream_bdf})"
